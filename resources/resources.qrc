@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file>themes/dark.qss</file>
+        <file>icons/close.svg</file>
+        <file>icons/branch-closed.svg</file>
+        <file>icons/branch-open.svg</file>
+    </qresource>
+</RCC>
