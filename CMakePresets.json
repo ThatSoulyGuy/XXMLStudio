@@ -1,0 +1,29 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "arm64",
+      "displayName": "ARM64 (Visual Studio)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "ARM64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.10.1/msvc2022_arm64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "arm64-debug",
+      "displayName": "ARM64 Debug",
+      "configurePreset": "arm64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "arm64-release",
+      "displayName": "ARM64 Release",
+      "configurePreset": "arm64",
+      "configuration": "Release"
+    }
+  ]
+}

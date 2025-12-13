@@ -3,10 +3,9 @@
 
 #include <QObject>
 #include <QString>
+#include "Project.h"
 
 namespace XXMLStudio {
-
-class Project;
 
 /**
  * Manages the currently open project.
@@ -21,7 +20,7 @@ public:
 
     // Project lifecycle
     bool openProject(const QString& path);
-    bool createProject(const QString& path, const QString& name);
+    bool createProject(const QString& path, const QString& name, Project::Type type = Project::Type::Executable);
     bool closeProject();
     bool saveProject();
 

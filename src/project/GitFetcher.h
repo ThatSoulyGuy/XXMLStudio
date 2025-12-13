@@ -62,6 +62,8 @@ private:
     Operation m_currentOperation = Operation::None;
     QString m_targetPath;
     QString m_gitExecutable;
+    QString m_currentUrl;
+    QString m_lastErrorOutput;
 };
 
 } // namespace XXMLStudio

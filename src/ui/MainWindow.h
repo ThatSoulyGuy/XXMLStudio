@@ -8,6 +8,7 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QLabel>
+#include <QComboBox>
 
 namespace XXMLStudio {
 
@@ -25,6 +26,23 @@ class ProcessRunner;
 class FindReplaceDialog;
 class BookmarkManager;
 class LSPClient;
+class GitManager;
+class GitChangesPanel;
+class GitHistoryPanel;
+class GitBranchWidget;
+class GitStatusIndicator;
+class GitFileDecorator;
+
+/**
+ * IDE state for dynamic status bar colors (VS 2022 style).
+ */
+enum class IDEState {
+    Idle,           // Purple - no project loaded
+    ProjectLoaded,  // Blue - project loaded
+    Building,       // Blue - building
+    Running,        // Orange - program running
+    Debugging       // Orange - debugging
+};
 
 /**
  * Main window of the XXMLStudio IDE.
@@ -96,13 +114,23 @@ private:
     void createFileMenu();
     void createEditMenu();
     void createViewMenu();
+    void createProjectMenu();
     void createBuildMenu();
     void createRunMenu();
     void createToolsMenu();
+    void createGitMenu();
     void createHelpMenu();
 
+    void updateRecentProjectsMenu();
     void saveWindowState();
     void restoreWindowState();
+    void checkResumeProject();
+    void updateStatusBarColor(IDEState state);
+    void updateLineEndingsLabel();
+    void setCompilationEntrypoint(const QString& path);
+
+    // IDE state tracking
+    IDEState m_ideState = IDEState::Idle;
 
     // Central widget
     EditorTabWidget* m_editorTabs = nullptr;
@@ -125,6 +153,9 @@ private:
     QToolBar* m_mainToolBar = nullptr;
     QToolBar* m_buildToolBar = nullptr;
 
+    // Toolbar widgets
+    QComboBox* m_configComboBox = nullptr;
+
     // Project management
     ProjectManager* m_projectManager = nullptr;
 
@@ -141,8 +172,19 @@ private:
     // Bookmark Manager
     BookmarkManager* m_bookmarkManager = nullptr;
 
+    // Git integration
+    GitManager* m_gitManager = nullptr;
+    QDockWidget* m_gitChangesDock = nullptr;
+    QDockWidget* m_gitHistoryDock = nullptr;
+    GitChangesPanel* m_gitChangesPanel = nullptr;
+    GitHistoryPanel* m_gitHistoryPanel = nullptr;
+    GitBranchWidget* m_gitBranchWidget = nullptr;
+    GitStatusIndicator* m_gitStatusIndicator = nullptr;
+    GitFileDecorator* m_gitFileDecorator = nullptr;
+
     // Status bar widgets
     QLabel* m_cursorPositionLabel = nullptr;
+    QLabel* m_lineEndingsLabel = nullptr;
     QLabel* m_encodingLabel = nullptr;
     QLabel* m_lspStatusLabel = nullptr;
 
@@ -178,7 +220,15 @@ private:
 
     // Actions - Run
     QAction* m_runAction = nullptr;
+    QAction* m_pauseAction = nullptr;
+    QAction* m_stopAction = nullptr;
     QAction* m_runWithoutBuildAction = nullptr;
+
+    // Actions - Project
+    QAction* m_manageDependenciesAction = nullptr;
+
+    // Menus that need dynamic updates
+    QMenu* m_recentProjectsMenu = nullptr;
 };
 
 } // namespace XXMLStudio

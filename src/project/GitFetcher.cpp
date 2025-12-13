@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QProcessEnvironment>
 #include <QStandardPaths>
 
 namespace XXMLStudio {
@@ -20,6 +21,14 @@ GitFetcher::GitFetcher(QObject* parent)
             this, &GitFetcher::onReadyReadStdout);
     connect(m_process, &QProcess::readyReadStandardError,
             this, &GitFetcher::onReadyReadStderr);
+
+    // Set environment to prevent git from prompting for credentials
+    // This prevents hangs when cloning from a non-interactive process
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("GIT_TERMINAL_PROMPT", "0");
+    env.insert("GIT_ASKPASS", "");
+    env.insert("SSH_ASKPASS", "");
+    m_process->setProcessEnvironment(env);
 }
 
 GitFetcher::~GitFetcher()
@@ -65,6 +74,8 @@ void GitFetcher::clone(const QString& url, const QString& targetPath, const QStr
 
     m_currentOperation = Operation::Clone;
     m_targetPath = targetPath;
+    m_currentUrl = url;
+    m_lastErrorOutput.clear();
 
     // Ensure parent directory exists
     QDir().mkpath(QFileInfo(targetPath).absolutePath());
@@ -158,6 +169,50 @@ void GitFetcher::onProcessFinished(int exitCode, QProcess::ExitStatus status)
         default:
             break;
         }
+    } else {
+        // Emit detailed error message
+        QString errorMsg;
+        switch (op) {
+        case Operation::Clone:
+            errorMsg = QString("Failed to clone repository: %1").arg(m_currentUrl);
+            break;
+        case Operation::Checkout:
+            errorMsg = QString("Failed to checkout: %1").arg(m_targetPath);
+            break;
+        default:
+            errorMsg = "Git operation failed";
+            break;
+        }
+
+        // Include the actual git error output if available
+        if (!m_lastErrorOutput.isEmpty()) {
+            // Extract the most relevant error line (usually contains "fatal:" or "error:")
+            QStringList lines = m_lastErrorOutput.split('\n', Qt::SkipEmptyParts);
+            QString relevantError;
+            for (const QString& line : lines) {
+                QString trimmed = line.trimmed();
+                if (trimmed.startsWith("fatal:") || trimmed.startsWith("error:")) {
+                    relevantError = trimmed;
+                    break;
+                }
+            }
+            if (relevantError.isEmpty() && !lines.isEmpty()) {
+                // Use the last non-progress line
+                for (int i = lines.size() - 1; i >= 0; --i) {
+                    QString trimmed = lines[i].trimmed();
+                    // Skip progress lines (contain percentages)
+                    if (!trimmed.contains('%') && !trimmed.isEmpty()) {
+                        relevantError = trimmed;
+                        break;
+                    }
+                }
+            }
+            if (!relevantError.isEmpty()) {
+                errorMsg += "\n" + relevantError;
+            }
+        }
+
+        emit error(errorMsg);
     }
 
     emit finished(success, m_targetPath);
@@ -203,6 +258,10 @@ void GitFetcher::onReadyReadStderr()
 {
     // Git outputs progress info to stderr
     QString output = QString::fromUtf8(m_process->readAllStandardError());
+
+    // Accumulate for error reporting
+    m_lastErrorOutput += output;
+
     if (!output.trimmed().isEmpty()) {
         // Filter out progress percentage lines for cleaner output
         QStringList lines = output.split('\n', Qt::SkipEmptyParts);

@@ -19,7 +19,8 @@ class JsonRpcClient : public QObject
     Q_OBJECT
 
 public:
-    using ResponseCallback = std::function<void(const QJsonObject& result, const QJsonObject& error)>;
+    // Response callback receives the raw QJsonValue to handle both arrays and objects
+    using ResponseCallback = std::function<void(const QJsonValue& result, const QJsonObject& error)>;
 
     explicit JsonRpcClient(QObject* parent = nullptr);
     ~JsonRpcClient();

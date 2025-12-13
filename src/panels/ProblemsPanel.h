@@ -34,6 +34,7 @@ public:
     ~ProblemsPanel();
 
     void clear();
+    void clearProblemsForFile(const QString& file);
     void addProblem(const Problem& problem);
     void addProblem(const QString& file, int line, int column,
                     const QString& severity, const QString& message);

@@ -14,9 +14,22 @@ namespace XXMLStudio {
 struct Dependency {
     QString name;
     QString gitUrl;
-    QString tag;        // Tag or branch
-    QString localPath;  // Resolved local path after fetching
-    QString commitHash; // Locked commit hash
+    QString tag;         // Tag or branch
+    QString localPath;   // Resolved path in project's Library folder
+    QString cachePath;   // Path in global cache (source for Library copy)
+    QString commitHash;  // Locked commit hash
+    QStringList dllFiles; // DLL filenames stored in .dlls/ subfolder
+};
+
+/**
+ * Optimization level for builds.
+ */
+enum class OptimizationLevel {
+    O0,     // No optimization (fastest compile, easiest debugging)
+    O1,     // Basic optimization
+    O2,     // Full optimization (recommended for release)
+    O3,     // Aggressive optimization (may increase code size)
+    Os      // Optimize for size
 };
 
 /**
@@ -25,9 +38,43 @@ struct Dependency {
 struct BuildConfiguration {
     QString name;           // "Debug" or "Release"
     QString outputDir;
-    QStringList flags;
-    bool optimize = false;
+    QStringList flags;      // Additional custom flags
+    OptimizationLevel optimization = OptimizationLevel::O0;
     bool debugInfo = true;
+
+    // Helper to get the compiler flag for the optimization level
+    QString optimizationFlag() const {
+        switch (optimization) {
+            case OptimizationLevel::O0: return QString();  // No flag needed
+            case OptimizationLevel::O1: return "-O1";
+            case OptimizationLevel::O2: return "-O2";
+            case OptimizationLevel::O3: return "-O3";
+            case OptimizationLevel::Os: return "-Os";
+        }
+        return QString();
+    }
+
+    // Helper to get display string for optimization level
+    static QString optimizationLevelToString(OptimizationLevel level) {
+        switch (level) {
+            case OptimizationLevel::O0: return "None (O0)";
+            case OptimizationLevel::O1: return "Basic (O1)";
+            case OptimizationLevel::O2: return "Full (O2)";
+            case OptimizationLevel::O3: return "Aggressive (O3)";
+            case OptimizationLevel::Os: return "Size (Os)";
+        }
+        return "None";
+    }
+
+    // Helper to parse optimization level from string
+    static OptimizationLevel optimizationLevelFromString(const QString& str) {
+        QString s = str.toLower().trimmed();
+        if (s == "o1" || s == "1" || s == "basic") return OptimizationLevel::O1;
+        if (s == "o2" || s == "2" || s == "full" || s == "true") return OptimizationLevel::O2;
+        if (s == "o3" || s == "3" || s == "aggressive") return OptimizationLevel::O3;
+        if (s == "os" || s == "s" || s == "size") return OptimizationLevel::Os;
+        return OptimizationLevel::O0;  // Default: no optimization
+    }
 };
 
 /**
@@ -62,14 +109,19 @@ struct RunConfiguration {
  * json-lib = github.com/xxml/json@v1.2.0
  *
  * [Build.Debug]
- * Optimize = false
+ * Optimization = O0       ; Options: O0, O1, O2, O3, Os
  * DebugInfo = true
  * OutputDir = build/debug
  *
  * [Build.Release]
- * Optimize = true
+ * Optimization = O2       ; Full optimization for release
  * DebugInfo = false
  * OutputDir = build/release
+ *
+ * [Build.ReleaseSize]
+ * Optimization = Os       ; Size-optimized build
+ * DebugInfo = false
+ * OutputDir = build/release-small
  *
  * [Run.Default]
  * Arguments = --verbose
@@ -115,6 +167,10 @@ public:
     // Build settings
     QString entryPoint() const { return m_entryPoint; }
     void setEntryPoint(const QString& path);
+
+    // Compilation entrypoint - compiler is invoked from this file's directory for #import resolution
+    QString compilationEntryPoint() const { return m_compilationEntryPoint; }
+    void setCompilationEntryPoint(const QString& path);
 
     QString outputDir() const { return m_outputDir; }
     void setOutputDir(const QString& dir);
@@ -163,6 +219,7 @@ private:
     QString m_filePath;
     Type m_type = Type::Executable;
     QString m_entryPoint;
+    QString m_compilationEntryPoint;
     QString m_outputDir = "build";
     QStringList m_includePaths;
     QList<Dependency> m_dependencies;

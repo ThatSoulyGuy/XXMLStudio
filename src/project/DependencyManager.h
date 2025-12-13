@@ -11,6 +11,7 @@ namespace XXMLStudio {
 
 class Project;
 class GitFetcher;
+class LibraryProcessor;
 struct Dependency;
 
 /**
@@ -29,6 +30,16 @@ public:
     void setCacheDir(const QString& path);
     QString cacheDir() const { return m_cacheDir; }
 
+    // Set the project root for Library folder
+    void setProjectRoot(const QString& path);
+    QString projectRoot() const { return m_projectRoot; }
+
+    // Get the Library path for a dependency
+    QString getLibraryPath(const QString& depName) const;
+
+    // Copy all dependency DLLs to the build output directory
+    void copyDllsToOutput(const QString& outputDir);
+
     // Resolve all dependencies for a project
     void resolveDependencies(Project* project);
 
@@ -40,6 +51,7 @@ public:
 
     // Clear the dependency cache
     void clearCache();
+    void clearCacheFor(const QString& gitUrl, const QString& tag);
 
     // Cancel ongoing operations
     void cancel();
@@ -73,14 +85,19 @@ private:
     void fetchDependency(const PendingDependency& dep);
     QString urlToPath(const QString& url) const;
     void parseTransitiveDependencies(const QString& path);
+    bool processToLibraryFolder(const QString& depName, const QString& cachePath);
 
     GitFetcher* m_fetcher = nullptr;
+    LibraryProcessor* m_processor = nullptr;
     QString m_cacheDir;
+    QString m_projectRoot;
     bool m_resolving = false;
     QQueue<PendingDependency> m_pendingQueue;
-    QMap<QString, QString> m_resolvedPaths; // name -> local path
+    QMap<QString, QString> m_resolvedPaths; // name -> Library path
+    QMap<QString, QStringList> m_dependencyDlls; // name -> DLL filenames
     QStringList m_processedUrls; // Track already processed URLs to avoid cycles
     Project* m_currentProject = nullptr;
+    PendingDependency m_currentDependency; // Currently being fetched
 };
 
 } // namespace XXMLStudio

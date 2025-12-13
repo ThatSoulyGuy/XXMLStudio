@@ -52,7 +52,7 @@ void JsonRpcClient::stop()
     }
 
     // Send shutdown request
-    sendRequest("shutdown", QJsonObject{}, [this](const QJsonObject&, const QJsonObject&) {
+    sendRequest("shutdown", QJsonObject{}, [this](const QJsonValue&, const QJsonObject&) {
         // Send exit notification
         sendNotification("exit", QJsonObject{});
 
@@ -177,9 +177,10 @@ void JsonRpcClient::handleMessage(const QJsonObject& message)
             ResponseCallback callback = m_pendingRequests.take(id);
 
             if (message.contains("error")) {
-                callback(QJsonObject{}, message["error"].toObject());
+                callback(QJsonValue(), message["error"].toObject());
             } else {
-                callback(message["result"].toObject(), QJsonObject{});
+                // Pass the raw result value - could be array, object, or other type
+                callback(message["result"], QJsonObject{});
             }
         }
     }

@@ -16,6 +16,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Widgets
     Network
     Concurrent
+    Svg
 )
 
 # =============================================================================
@@ -27,6 +28,8 @@ set(CORE_SOURCES
     src/core/Application.h
     src/core/Settings.cpp
     src/core/Settings.h
+    src/core/IconUtils.cpp
+    src/core/IconUtils.h
 )
 
 set(UI_SOURCES
@@ -43,6 +46,8 @@ set(EDITOR_SOURCES
     src/editor/EditorTabWidget.h
     src/editor/BookmarkManager.cpp
     src/editor/BookmarkManager.h
+    src/editor/CompletionWidget.cpp
+    src/editor/CompletionWidget.h
 )
 
 set(PANEL_SOURCES
@@ -56,6 +61,27 @@ set(PANEL_SOURCES
     src/panels/TerminalPanel.h
     src/panels/OutlinePanel.cpp
     src/panels/OutlinePanel.h
+    src/panels/GitChangesPanel.cpp
+    src/panels/GitChangesPanel.h
+    src/panels/GitHistoryPanel.cpp
+    src/panels/GitHistoryPanel.h
+    src/panels/GitFileDecorator.cpp
+    src/panels/GitFileDecorator.h
+)
+
+set(GIT_SOURCES
+    src/git/GitTypes.h
+    src/git/GitManager.cpp
+    src/git/GitManager.h
+    src/git/GitStatusModel.cpp
+    src/git/GitStatusModel.h
+)
+
+set(WIDGET_SOURCES
+    src/widgets/GitBranchWidget.cpp
+    src/widgets/GitBranchWidget.h
+    src/widgets/GitStatusIndicator.cpp
+    src/widgets/GitStatusIndicator.h
 )
 
 set(LSP_SOURCES
@@ -79,6 +105,8 @@ set(PROJECT_SOURCES
     src/project/GitFetcher.h
     src/project/ProjectFileParser.cpp
     src/project/ProjectFileParser.h
+    src/project/LibraryProcessor.cpp
+    src/project/LibraryProcessor.h
     src/project/Solution.cpp
     src/project/Solution.h
 )
@@ -90,10 +118,10 @@ set(BUILD_SOURCES
     src/build/CompilerInvoker.h
     src/build/OutputParser.cpp
     src/build/OutputParser.h
-    src/build/ToolchainLocator.cpp
-    src/build/ToolchainLocator.h
     src/build/ProcessRunner.cpp
     src/build/ProcessRunner.h
+    src/build/ToolchainLocator.cpp
+    src/build/ToolchainLocator.h
 )
 
 set(DIALOG_SOURCES
@@ -105,6 +133,14 @@ set(DIALOG_SOURCES
     src/dialogs/SettingsDialog.h
     src/dialogs/NewProjectDialog.cpp
     src/dialogs/NewProjectDialog.h
+    src/dialogs/ResumeProjectDialog.cpp
+    src/dialogs/ResumeProjectDialog.h
+    src/dialogs/DependencyDialog.cpp
+    src/dialogs/DependencyDialog.h
+    src/dialogs/AddDependencyDialog.cpp
+    src/dialogs/AddDependencyDialog.h
+    src/dialogs/SetUpstreamDialog.cpp
+    src/dialogs/SetUpstreamDialog.h
 )
 
 # All sources combined
@@ -118,6 +154,8 @@ set(ALL_SOURCES
     ${PROJECT_SOURCES}
     ${BUILD_SOURCES}
     ${DIALOG_SOURCES}
+    ${GIT_SOURCES}
+    ${WIDGET_SOURCES}
     resources/resources.qrc
 )
 
@@ -143,6 +181,7 @@ target_link_libraries(XXMLStudio PRIVATE
     Qt6::Widgets
     Qt6::Network
     Qt6::Concurrent
+    Qt6::Svg
 )
 
 # =============================================================================

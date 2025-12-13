@@ -31,7 +31,12 @@ enum class FormatType {
     Bracket,
     Ownership,
     Import,
-    TemplateInst
+    TemplateInst,
+    MethodCall,
+    Identifier,
+    Variable,
+    ImportPath,
+    This
 };
 
 /**
@@ -76,6 +81,11 @@ private:
     QTextCharFormat m_ownershipFormat;
     QTextCharFormat m_importFormat;
     QTextCharFormat m_templateInstFormat;
+    QTextCharFormat m_methodCallFormat;
+    QTextCharFormat m_identifierFormat;
+    QTextCharFormat m_variableFormat;
+    QTextCharFormat m_importPathFormat;
+    QTextCharFormat m_thisFormat;
 
     // Multi-line comment state
     QRegularExpression m_commentStartExpression;

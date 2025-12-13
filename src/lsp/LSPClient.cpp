@@ -1,6 +1,7 @@
 #include "LSPClient.h"
 #include "JsonRpcClient.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QUrl>
 #include <QDir>
@@ -36,14 +37,46 @@ bool LSPClient::start(const QString& serverPath)
         return false;
     }
 
+    m_serverPath = serverPath;
     setState(State::Connecting);
 
-    if (!m_rpc->start(serverPath)) {
+    // Build command-line arguments with -I for include paths
+    QStringList args;
+    for (const QString& path : m_includePaths) {
+        args << "-I" << path;
+    }
+
+    if (!m_rpc->start(serverPath, args)) {
         setState(State::Disconnected);
         return false;
     }
 
     return true;
+}
+
+void LSPClient::restart()
+{
+    if (m_serverPath.isEmpty()) {
+        return;
+    }
+
+    // Clear pending requests
+    m_pendingCompletions.clear();
+    m_pendingHovers.clear();
+    m_pendingDefinitions.clear();
+    m_pendingReferences.clear();
+    m_pendingSymbols.clear();
+
+    // If already disconnected, start immediately
+    if (m_state == State::Disconnected) {
+        start(m_serverPath);
+        return;
+    }
+
+    // Otherwise, set pending restart flag and stop
+    // onServerStopped will trigger the restart
+    m_pendingRestart = true;
+    stop();
 }
 
 void LSPClient::stop()
@@ -64,6 +97,14 @@ void LSPClient::onServerStarted()
 void LSPClient::onServerStopped()
 {
     setState(State::Disconnected);
+
+    // Check if we need to restart
+    if (m_pendingRestart) {
+        m_pendingRestart = false;
+        if (!m_serverPath.isEmpty()) {
+            start(m_serverPath);
+        }
+    }
 }
 
 void LSPClient::onServerError(const QString& errorMsg)
@@ -74,6 +115,29 @@ void LSPClient::onServerError(const QString& errorMsg)
 void LSPClient::setProjectRoot(const QString& path)
 {
     m_rootPath = path;
+}
+
+void LSPClient::setIncludePaths(const QStringList& paths)
+{
+    m_includePaths = paths;
+}
+
+void LSPClient::updateConfiguration()
+{
+    if (!isReady()) return;
+
+    // Send workspace/didChangeConfiguration notification
+    QJsonObject settings;
+    QJsonArray includePathsArray;
+    for (const QString& path : m_includePaths) {
+        includePathsArray.append(path);
+    }
+    settings["includePaths"] = includePathsArray;
+
+    QJsonObject params;
+    params["settings"] = settings;
+
+    m_rpc->sendNotification("workspace/didChangeConfiguration", params);
 }
 
 void LSPClient::initialize()
@@ -87,6 +151,17 @@ void LSPClient::initialize()
     params["processId"] = static_cast<int>(QCoreApplication::applicationPid());
     params["rootPath"] = rootPath;
     params["rootUri"] = filePathToUri(rootPath);
+
+    // Pass include paths as initialization options
+    if (!m_includePaths.isEmpty()) {
+        QJsonObject initOptions;
+        QJsonArray includePathsArray;
+        for (const QString& path : m_includePaths) {
+            includePathsArray.append(path);
+        }
+        initOptions["includePaths"] = includePathsArray;
+        params["initializationOptions"] = initOptions;
+    }
 
     QJsonObject capabilities;
     QJsonObject textDocumentCapabilities;
@@ -116,7 +191,7 @@ void LSPClient::initialize()
     params["capabilities"] = capabilities;
 
     m_rpc->sendRequest("initialize", params,
-        [this](const QJsonObject& result, const QJsonObject& err) {
+        [this](const QJsonValue& result, const QJsonObject& err) {
             Q_UNUSED(result)
             if (!err.isEmpty()) {
                 emit this->error(QString("Initialize failed: %1").arg(err["message"].toString()));
@@ -186,15 +261,24 @@ void LSPClient::saveDocument(const QString& uri, const QString& text)
 
 void LSPClient::requestCompletion(const QString& uri, int line, int character)
 {
-    if (!isReady()) return;
+    if (!isReady()) {
+        qDebug() << "LSPClient::requestCompletion - not ready";
+        return;
+    }
+
+    qDebug() << "LSPClient::requestCompletion" << uri << "line" << line << "char" << character;
 
     QJsonObject params;
     params["textDocument"] = QJsonObject{{"uri", uri}};
     params["position"] = QJsonObject{{"line", line}, {"character", character}};
 
     int id = m_rpc->sendRequest("textDocument/completion", params,
-        [this, uri](const QJsonObject& result, const QJsonObject& err) {
+        [this, uri](const QJsonValue& result, const QJsonObject& err) {
+            qDebug() << "LSPClient: completion response received, isArray:" << result.isArray()
+                     << "isObject:" << result.isObject() << "isNull:" << result.isNull();
+
             if (!err.isEmpty()) {
+                qDebug() << "LSPClient: completion error:" << err["message"].toString();
                 emit this->error(QString("Completion failed: %1").arg(err["message"].toString()));
                 return;
             }
@@ -202,14 +286,23 @@ void LSPClient::requestCompletion(const QString& uri, int line, int character)
             QList<LSPCompletionItem> items;
             QJsonArray itemsArray;
 
-            if (result.contains("items")) {
-                itemsArray = result["items"].toArray();
+            // Handle both CompletionList (object with items) and CompletionItem[] (direct array)
+            if (result.isArray()) {
+                itemsArray = result.toArray();
+                qDebug() << "LSPClient: got array with" << itemsArray.size() << "items";
+            } else if (result.isObject()) {
+                QJsonObject obj = result.toObject();
+                if (obj.contains("items")) {
+                    itemsArray = obj["items"].toArray();
+                    qDebug() << "LSPClient: got object with" << itemsArray.size() << "items";
+                }
             }
 
             for (const auto& item : itemsArray) {
                 items.append(LSPCompletionItem::fromJson(item.toObject()));
             }
 
+            qDebug() << "LSPClient: emitting completionReceived with" << items.size() << "items";
             emit completionReceived(uri, items);
         });
 
@@ -225,18 +318,18 @@ void LSPClient::requestHover(const QString& uri, int line, int character)
     params["position"] = QJsonObject{{"line", line}, {"character", character}};
 
     int id = m_rpc->sendRequest("textDocument/hover", params,
-        [this, uri](const QJsonObject& result, const QJsonObject& err) {
+        [this, uri](const QJsonValue& result, const QJsonObject& err) {
             if (!err.isEmpty()) {
                 emit this->error(QString("Hover failed: %1").arg(err["message"].toString()));
                 return;
             }
 
-            if (result.isEmpty()) {
+            if (result.isNull() || !result.isObject()) {
                 emit hoverReceived(uri, LSPHover{});
                 return;
             }
 
-            LSPHover hover = LSPHover::fromJson(result);
+            LSPHover hover = LSPHover::fromJson(result.toObject());
             emit hoverReceived(uri, hover);
         });
 
@@ -252,15 +345,23 @@ void LSPClient::requestDefinition(const QString& uri, int line, int character)
     params["position"] = QJsonObject{{"line", line}, {"character", character}};
 
     int id = m_rpc->sendRequest("textDocument/definition", params,
-        [this, uri](const QJsonObject& result, const QJsonObject& err) {
+        [this, uri](const QJsonValue& result, const QJsonObject& err) {
             if (!err.isEmpty()) {
                 emit this->error(QString("Definition failed: %1").arg(err["message"].toString()));
                 return;
             }
 
             QList<LSPLocation> locations;
-            if (result.contains("uri")) {
-                locations.append(LSPLocation::fromJson(result));
+            // Can be null, a single Location, or an array of Locations
+            if (result.isObject()) {
+                QJsonObject obj = result.toObject();
+                if (obj.contains("uri")) {
+                    locations.append(LSPLocation::fromJson(obj));
+                }
+            } else if (result.isArray()) {
+                for (const auto& loc : result.toArray()) {
+                    locations.append(LSPLocation::fromJson(loc.toObject()));
+                }
             }
 
             emit definitionReceived(uri, locations);
@@ -279,14 +380,18 @@ void LSPClient::requestReferences(const QString& uri, int line, int character)
     params["context"] = QJsonObject{{"includeDeclaration", true}};
 
     int id = m_rpc->sendRequest("textDocument/references", params,
-        [this, uri](const QJsonObject& result, const QJsonObject& err) {
-            Q_UNUSED(result)
+        [this, uri](const QJsonValue& result, const QJsonObject& err) {
             if (!err.isEmpty()) {
                 emit this->error(QString("References failed: %1").arg(err["message"].toString()));
                 return;
             }
 
             QList<LSPLocation> locations;
+            if (result.isArray()) {
+                for (const auto& loc : result.toArray()) {
+                    locations.append(LSPLocation::fromJson(loc.toObject()));
+                }
+            }
             emit referencesReceived(uri, locations);
         });
 
@@ -301,14 +406,18 @@ void LSPClient::requestDocumentSymbols(const QString& uri)
     params["textDocument"] = QJsonObject{{"uri", uri}};
 
     int id = m_rpc->sendRequest("textDocument/documentSymbol", params,
-        [this, uri](const QJsonObject& result, const QJsonObject& err) {
-            Q_UNUSED(result)
+        [this, uri](const QJsonValue& result, const QJsonObject& err) {
             if (!err.isEmpty()) {
                 emit this->error(QString("DocumentSymbol failed: %1").arg(err["message"].toString()));
                 return;
             }
 
             QList<LSPDocumentSymbol> symbols;
+            if (result.isArray()) {
+                for (const auto& sym : result.toArray()) {
+                    symbols.append(LSPDocumentSymbol::fromJson(sym.toObject()));
+                }
+            }
             emit documentSymbolsReceived(uri, symbols);
         });
 

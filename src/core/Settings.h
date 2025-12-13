@@ -79,6 +79,8 @@ public:
     // General
     bool restoreSessionOnStartup() const;
     void setRestoreSessionOnStartup(bool restore);
+    bool promptToResumeProject() const;
+    void setPromptToResumeProject(bool prompt);
     QString theme() const;
     void setTheme(const QString& theme);
 

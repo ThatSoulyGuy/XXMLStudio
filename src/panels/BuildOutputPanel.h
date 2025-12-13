@@ -5,11 +5,13 @@
 #include <QPlainTextEdit>
 #include <QVBoxLayout>
 #include <QToolBar>
+#include <QTextCharFormat>
 
 namespace XXMLStudio {
 
 /**
  * Panel displaying build output from the compiler.
+ * Supports ANSI escape codes for colored output.
  */
 class BuildOutputPanel : public QWidget
 {
@@ -33,10 +35,18 @@ signals:
 
 private:
     void setupUi();
+    void appendAnsiText(const QString& text);
+    void parseAnsiCode(const QString& code);
+    void resetFormat();
 
     QVBoxLayout* m_layout = nullptr;
     QToolBar* m_toolbar = nullptr;
     QPlainTextEdit* m_output = nullptr;
+
+    // Current text format for ANSI rendering
+    QTextCharFormat m_currentFormat;
+    QColor m_defaultFg;
+    QColor m_defaultBg;
 };
 
 } // namespace XXMLStudio

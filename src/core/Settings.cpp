@@ -323,6 +323,16 @@ void Settings::setRestoreSessionOnStartup(bool restore)
     m_settings.setValue("General/restoreSession", restore);
 }
 
+bool Settings::promptToResumeProject() const
+{
+    return m_settings.value("General/promptToResume", true).toBool();
+}
+
+void Settings::setPromptToResumeProject(bool prompt)
+{
+    m_settings.setValue("General/promptToResume", prompt);
+}
+
 QString Settings::theme() const
 {
     return m_settings.value("General/theme", "dark").toString();

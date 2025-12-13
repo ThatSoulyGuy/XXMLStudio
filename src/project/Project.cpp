@@ -16,14 +16,14 @@ Project::Project(QObject* parent)
     debugConfig.name = "Debug";
     debugConfig.outputDir = "build/debug";
     debugConfig.debugInfo = true;
-    debugConfig.optimize = false;
+    debugConfig.optimization = OptimizationLevel::O0;  // No optimization for debugging
     m_configurations.append(debugConfig);
 
     BuildConfiguration releaseConfig;
     releaseConfig.name = "Release";
     releaseConfig.outputDir = "build/release";
     releaseConfig.debugInfo = false;
-    releaseConfig.optimize = true;
+    releaseConfig.optimization = OptimizationLevel::O2;  // Full optimization for release
     m_configurations.append(releaseConfig);
 
     // Default run configuration
@@ -181,6 +181,15 @@ void Project::setEntryPoint(const QString& path)
     }
 }
 
+void Project::setCompilationEntryPoint(const QString& path)
+{
+    if (m_compilationEntryPoint != path) {
+        m_compilationEntryPoint = path;
+        m_modified = true;
+        emit modified();
+    }
+}
+
 void Project::setOutputDir(const QString& dir)
 {
     if (m_outputDir != dir) {
@@ -309,6 +318,7 @@ bool Project::parseProjectFile(const QString& content)
         m_name = parser.value("Project", "Name", "Untitled");
         m_version = parser.value("Project", "Version", "0.1.0");
         m_entryPoint = parser.value("Project", "EntryPoint");
+        m_compilationEntryPoint = parser.value("Project", "CompilationEntryPoint");
         m_outputDir = parser.value("Project", "OutputDir", "build");
         m_activeConfigName = parser.value("Project", "ActiveConfig", "Debug");
         m_activeRunConfigName = parser.value("Project", "ActiveRunConfig", "Default");
@@ -347,7 +357,19 @@ bool Project::parseProjectFile(const QString& content)
             BuildConfiguration config;
             config.name = configName;
             config.outputDir = parser.value(sectionName, "OutputDir", "build/" + configName.toLower());
-            config.optimize = parser.value(sectionName, "Optimize", "false").toLower() == "true";
+
+            // Parse optimization level - supports both old "Optimize" boolean and new "Optimization" level
+            QString optValue = parser.value(sectionName, "Optimization");
+            if (!optValue.isEmpty()) {
+                config.optimization = BuildConfiguration::optimizationLevelFromString(optValue);
+            } else {
+                // Fallback to old "Optimize" boolean for backwards compatibility
+                QString oldOptimize = parser.value(sectionName, "Optimize", "false");
+                config.optimization = (oldOptimize.toLower() == "true")
+                    ? OptimizationLevel::O2
+                    : OptimizationLevel::O0;
+            }
+
             config.debugInfo = parser.value(sectionName, "DebugInfo", "true").toLower() == "true";
 
             QString flags = parser.value(sectionName, "Flags");
@@ -365,14 +387,14 @@ bool Project::parseProjectFile(const QString& content)
         debugConfig.name = "Debug";
         debugConfig.outputDir = "build/debug";
         debugConfig.debugInfo = true;
-        debugConfig.optimize = false;
+        debugConfig.optimization = OptimizationLevel::O0;
         m_configurations.append(debugConfig);
 
         BuildConfiguration releaseConfig;
         releaseConfig.name = "Release";
         releaseConfig.outputDir = "build/release";
         releaseConfig.debugInfo = false;
-        releaseConfig.optimize = true;
+        releaseConfig.optimization = OptimizationLevel::O2;
         m_configurations.append(releaseConfig);
     }
 
@@ -420,6 +442,9 @@ QString Project::generateProjectFile() const
     if (!m_entryPoint.isEmpty()) {
         projectSection.values["EntryPoint"] = m_entryPoint;
     }
+    if (!m_compilationEntryPoint.isEmpty()) {
+        projectSection.values["CompilationEntryPoint"] = m_compilationEntryPoint;
+    }
     projectSection.values["OutputDir"] = m_outputDir;
     projectSection.values["ActiveConfig"] = m_activeConfigName;
     projectSection.values["ActiveRunConfig"] = m_activeRunConfigName;
@@ -456,7 +481,16 @@ QString Project::generateProjectFile() const
         ProjectFileParser::Section buildSection;
         buildSection.name = "Build." + config.name;
         buildSection.values["OutputDir"] = config.outputDir;
-        buildSection.values["Optimize"] = config.optimize ? "true" : "false";
+
+        // Serialize optimization level
+        switch (config.optimization) {
+            case OptimizationLevel::O0: buildSection.values["Optimization"] = "O0"; break;
+            case OptimizationLevel::O1: buildSection.values["Optimization"] = "O1"; break;
+            case OptimizationLevel::O2: buildSection.values["Optimization"] = "O2"; break;
+            case OptimizationLevel::O3: buildSection.values["Optimization"] = "O3"; break;
+            case OptimizationLevel::Os: buildSection.values["Optimization"] = "Os"; break;
+        }
+
         buildSection.values["DebugInfo"] = config.debugInfo ? "true" : "false";
         if (!config.flags.isEmpty()) {
             buildSection.values["Flags"] = config.flags.join(' ');

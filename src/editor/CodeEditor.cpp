@@ -1,6 +1,8 @@
 #include "CodeEditor.h"
 #include "XXMLSyntaxHighlighter.h"
+#include "CompletionWidget.h"
 
+#include <QDebug>
 #include <QPainter>
 #include <QTextBlock>
 #include <QScrollBar>
@@ -28,6 +30,18 @@ void CodeEditor::setupEditor()
     // Create syntax highlighter
     m_highlighter = new XXMLSyntaxHighlighter(document());
 
+    // Create completion widget
+    m_completionWidget = new CompletionWidget(this);
+
+    // Create completion timer for delayed triggering
+    m_completionTimer = new QTimer(this);
+    m_completionTimer->setSingleShot(true);
+    connect(m_completionTimer, &QTimer::timeout, this, [this]() {
+        int line = currentLine() - 1;  // LSP uses 0-based
+        int character = currentColumn() - 1;
+        emit completionRequested(line, character);
+    });
+
     // Set editor properties
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setMouseTracking(true);  // For diagnostic tooltips
@@ -52,6 +66,11 @@ void CodeEditor::setupConnections()
             this, &CodeEditor::onCursorPositionChanged);
     connect(document(), &QTextDocument::modificationChanged,
             this, &CodeEditor::onModificationChanged);
+
+    // Emit documentChanged when text changes (for LSP sync)
+    connect(document(), &QTextDocument::contentsChanged, this, [this]() {
+        emit documentChanged();
+    });
 }
 
 int CodeEditor::lineNumberAreaWidth() const
@@ -106,7 +125,7 @@ void CodeEditor::highlightCurrentLine()
 
     if (!isReadOnly() && m_highlightCurrentLine) {
         QTextEdit::ExtraSelection selection;
-        QColor lineColor = QColor(40, 40, 40);  // Dark theme current line color
+        QColor lineColor = QColor(45, 45, 48);  // VS 2022 current line (#2D2D30)
 
         selection.format.setBackground(lineColor);
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
@@ -150,8 +169,8 @@ void CodeEditor::highlightCurrentLine()
     if (bracketPos >= 0) {
         int matchPos = findMatchingBracket(bracketPos, bracket, searchForward);
         if (matchPos >= 0) {
-            // Highlight both brackets with a subtle background
-            QColor bracketMatchColor(80, 80, 80);
+            // Highlight both brackets with VS 2022 style
+            QColor bracketMatchColor(62, 62, 64);  // #3E3E40
 
             QTextEdit::ExtraSelection sel1;
             sel1.format.setBackground(bracketMatchColor);
@@ -223,7 +242,7 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent* event)
     }
 
     QPainter painter(m_lineNumberArea);
-    painter.fillRect(event->rect(), QColor(30, 30, 30));  // Dark theme gutter
+    painter.fillRect(event->rect(), QColor(37, 37, 38));  // VS 2022 gutter (#252526)
 
     QTextBlock block = firstVisibleBlock();
     int blockNumber = block.blockNumber();
@@ -264,15 +283,15 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent* event)
                 }
             }
 
-            // Highlight current line number
+            // Highlight current line number (VS 2022 colors)
             if (blockNumber == textCursor().blockNumber()) {
-                painter.setPen(QColor(200, 200, 200));  // Bright for current line
+                painter.setPen(QColor(241, 241, 241));  // VS 2022 active line (#F1F1F1)
             } else if (hasError) {
                 painter.setPen(QColor(255, 100, 100));  // Red for errors
             } else if (hasWarning) {
                 painter.setPen(QColor(255, 200, 100));  // Yellow for warnings
             } else {
-                painter.setPen(QColor(100, 100, 100));  // Dim for other lines
+                painter.setPen(QColor(133, 133, 133));  // VS 2022 inactive line (#858585)
             }
 
             painter.drawText(bookmarkAreaWidth, top, m_lineNumberArea->width() - bookmarkAreaWidth - 8,
@@ -287,7 +306,7 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent* event)
     }
 
     // Draw separator line between line numbers and code
-    painter.setPen(QColor(62, 62, 66));  // #3e3e42 - subtle gray separator
+    painter.setPen(QColor(62, 62, 64));  // VS 2022 border (#3E3E40)
     int lineX = m_lineNumberArea->width() - 1;
     painter.drawLine(lineX, event->rect().top(), lineX, event->rect().bottom());
 }
@@ -335,6 +354,18 @@ bool CodeEditor::event(QEvent* event)
 
 void CodeEditor::keyPressEvent(QKeyEvent* event)
 {
+    // Handle Ctrl+Space for manual completion trigger
+    if (event->key() == Qt::Key_Space && (event->modifiers() & Qt::ControlModifier)) {
+        triggerCompletion();
+        return;
+    }
+
+    // If completion is visible and Escape is pressed, hide it
+    if (event->key() == Qt::Key_Escape && isCompletionVisible()) {
+        hideCompletions();
+        return;
+    }
+
     QString text = event->text();
 
     // Auto-closing pairs
@@ -349,7 +380,49 @@ void CodeEditor::keyPressEvent(QKeyEvent* event)
             {'[', ']'}
         };
 
-        // Opening brackets - insert pair
+        // Opening brackets with selection - surround and indent
+        if (openPairs.contains(ch) && cursor.hasSelection()) {
+            QString selectedText = cursor.selectedText();
+            // QTextCursor uses Unicode paragraph separator (U+2029) for newlines
+            selectedText.replace(QChar::ParagraphSeparator, '\n');
+
+            // Get current line's indentation
+            QTextBlock block = document()->findBlock(cursor.selectionStart());
+            QString lineText = block.text();
+            QString baseIndent;
+            for (QChar c : lineText) {
+                if (c == ' ' || c == '\t') {
+                    baseIndent += c;
+                } else {
+                    break;
+                }
+            }
+
+            QString innerIndent = baseIndent + (m_useSpacesForTabs ? QString(m_tabWidth, ' ') : QString("\t"));
+
+            // Indent each line of the selection
+            QStringList lines = selectedText.split('\n');
+            QString indentedText;
+            for (int i = 0; i < lines.size(); ++i) {
+                if (i > 0) {
+                    indentedText += '\n';
+                }
+                // Add inner indent to each line
+                indentedText += innerIndent + lines[i];
+            }
+
+            // Build the surrounded text
+            QString result = QString(ch) + '\n' + indentedText + '\n' + baseIndent + openPairs[ch];
+
+            cursor.beginEditBlock();
+            cursor.insertText(result);
+            cursor.endEditBlock();
+
+            setTextCursor(cursor);
+            return;
+        }
+
+        // Opening brackets without selection - insert pair
         if (openPairs.contains(ch)) {
             cursor.insertText(QString(ch) + openPairs[ch]);
             cursor.movePosition(QTextCursor::Left);
@@ -387,6 +460,67 @@ void CodeEditor::keyPressEvent(QKeyEvent* event)
                 }
             }
         }
+    }
+
+    // Handle Enter - expand braces/brackets/parentheses
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        QTextCursor cursor = textCursor();
+        int pos = cursor.position();
+
+        if (pos > 0 && !cursor.atEnd()) {
+            QChar prevChar = document()->characterAt(pos - 1);
+            QChar nextChar = document()->characterAt(pos);
+
+            // Check if we're between matching pairs
+            static const QMap<QChar, QChar> expandPairs = {
+                {'{', '}'},
+                {'[', ']'},
+                {'(', ')'}
+            };
+
+            if (expandPairs.contains(prevChar) && expandPairs[prevChar] == nextChar) {
+                // Get current line's indentation
+                QTextBlock block = cursor.block();
+                QString lineText = block.text();
+                QString indent;
+                for (QChar ch : lineText) {
+                    if (ch == ' ' || ch == '\t') {
+                        indent += ch;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Build the expansion text
+                QString innerIndent = indent + (m_useSpacesForTabs ? QString(m_tabWidth, ' ') : QString("\t"));
+
+                cursor.beginEditBlock();
+                cursor.insertText("\n" + innerIndent);
+                int cursorPos = cursor.position();
+                cursor.insertText("\n" + indent);
+                cursor.setPosition(cursorPos);
+                cursor.endEditBlock();
+
+                setTextCursor(cursor);
+                return;
+            }
+        }
+
+        // Auto-indent on Enter (maintain current indentation)
+        QTextBlock block = cursor.block();
+        QString lineText = block.text();
+        QString indent;
+        for (QChar ch : lineText) {
+            if (ch == ' ' || ch == '\t') {
+                indent += ch;
+            } else {
+                break;
+            }
+        }
+
+        cursor.insertText("\n" + indent);
+        setTextCursor(cursor);
+        return;
     }
 
     // Handle Backspace - delete matching pairs
@@ -456,6 +590,20 @@ void CodeEditor::keyPressEvent(QKeyEvent* event)
     }
 
     QPlainTextEdit::keyPressEvent(event);
+
+    // Check for trigger characters after key is processed
+    if (text.length() == 1) {
+        QChar ch = text[0];
+        if (isTriggerCharacter(ch)) {
+            // Trigger completion immediately for trigger chars
+            qDebug() << "CodeEditor: trigger character" << ch << "detected, triggering completion";
+            triggerCompletion();
+        } else if (ch.isLetter() || ch == '_') {
+            // Schedule completion for identifier characters
+            qDebug() << "CodeEditor: letter/underscore" << ch << "detected, scheduling completion";
+            scheduleCompletion();
+        }
+    }
 }
 
 void CodeEditor::onModificationChanged(bool changed)
@@ -732,6 +880,64 @@ int CodeEditor::findMatchingBracket(int pos, QChar bracket, bool forward) const
     }
 
     return -1;
+}
+
+// Autocomplete methods
+void CodeEditor::showCompletions(const QList<LSPCompletionItem>& items)
+{
+    qDebug() << "CodeEditor::showCompletions called with" << items.size() << "items";
+    if (m_completionWidget) {
+        m_completionWidget->showCompletions(items);
+    } else {
+        qDebug() << "CodeEditor: m_completionWidget is null!";
+    }
+}
+
+void CodeEditor::hideCompletions()
+{
+    if (m_completionWidget) {
+        m_completionWidget->hide();
+    }
+}
+
+bool CodeEditor::isCompletionVisible() const
+{
+    return m_completionWidget && m_completionWidget->isVisible();
+}
+
+void CodeEditor::triggerCompletion()
+{
+    qDebug() << "CodeEditor::triggerCompletion called";
+
+    // Cancel any pending timer
+    if (m_completionTimer) {
+        m_completionTimer->stop();
+    }
+
+    // Request completion at current position
+    int line = currentLine() - 1;  // LSP uses 0-based
+    int character = currentColumn() - 1;
+    qDebug() << "CodeEditor: emitting completionRequested at line" << line << "char" << character;
+    emit completionRequested(line, character);
+}
+
+bool CodeEditor::isTriggerCharacter(QChar ch) const
+{
+    // Trigger characters for XXML LSP: ".", ":", "<"
+    return ch == '.' || ch == ':' || ch == '<';
+}
+
+void CodeEditor::scheduleCompletion()
+{
+    // Don't schedule if completion is already visible (let filter handle it)
+    if (isCompletionVisible()) {
+        return;
+    }
+
+    // Schedule completion after a short delay
+    if (m_completionTimer) {
+        m_completionTimer->start(COMPLETION_DELAY_MS);
+    }
 }
 
 } // namespace XXMLStudio

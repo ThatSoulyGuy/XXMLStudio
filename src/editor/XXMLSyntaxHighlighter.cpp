@@ -32,6 +32,11 @@ const QTextCharFormat& XXMLSyntaxHighlighter::formatFor(FormatType type) const
     case FormatType::Ownership:     return m_ownershipFormat;
     case FormatType::Import:        return m_importFormat;
     case FormatType::TemplateInst:  return m_templateInstFormat;
+    case FormatType::MethodCall:    return m_methodCallFormat;
+    case FormatType::Identifier:    return m_identifierFormat;
+    case FormatType::Variable:      return m_variableFormat;
+    case FormatType::ImportPath:    return m_importPathFormat;
+    case FormatType::This:          return m_thisFormat;
     default:                        return m_keywordFormat;
     }
 }
@@ -60,7 +65,7 @@ void XXMLSyntaxHighlighter::applyTheme()
         m_numberFormat.setForeground(QColor("#6897BB"));   // Blue - numbers
         m_numberFormat.setFontWeight(QFont::Normal);
 
-        m_operatorFormat.setForeground(QColor("#CC7832")); // Orange - operators
+        m_operatorFormat.setForeground(QColor("#A9B7C6")); // Light gray - operators (< > etc)
         m_operatorFormat.setFontWeight(QFont::Normal);
 
         m_bracketFormat.setForeground(QColor("#A9B7C6"));  // Gray-blue - brackets
@@ -74,6 +79,21 @@ void XXMLSyntaxHighlighter::applyTheme()
 
         m_templateInstFormat.setForeground(QColor("#A9B7C6")); // Gray-blue - templates
         m_templateInstFormat.setFontWeight(QFont::Normal);
+
+        m_methodCallFormat.setForeground(QColor("#FFC66D"));  // Yellow - method calls
+        m_methodCallFormat.setFontWeight(QFont::Normal);
+
+        m_identifierFormat.setForeground(QColor("#D0D0D0"));  // Light gray - identifiers
+        m_identifierFormat.setFontWeight(QFont::Normal);
+
+        m_variableFormat.setForeground(QColor("#9CDCFE"));    // Light blue - variables
+        m_variableFormat.setFontWeight(QFont::Normal);
+
+        m_importPathFormat.setForeground(QColor("#E0E0E0"));  // Light gray - import paths
+        m_importPathFormat.setFontWeight(QFont::Normal);
+
+        m_thisFormat.setForeground(QColor("#268BD2"));        // Unique blue - this keyword
+        m_thisFormat.setFontWeight(QFont::Normal);
         break;
 
     case SyntaxTheme::QtCreator:
@@ -111,6 +131,21 @@ void XXMLSyntaxHighlighter::applyTheme()
 
         m_templateInstFormat.setForeground(QColor("#FFCB6B")); // Gold - templates
         m_templateInstFormat.setFontWeight(QFont::Normal);
+
+        m_methodCallFormat.setForeground(QColor("#82AAFF"));  // Light blue - method calls
+        m_methodCallFormat.setFontWeight(QFont::Normal);
+
+        m_identifierFormat.setForeground(QColor("#EEFFFF"));  // White - identifiers
+        m_identifierFormat.setFontWeight(QFont::Normal);
+
+        m_variableFormat.setForeground(QColor("#89DDFF"));    // Cyan - variables
+        m_variableFormat.setFontWeight(QFont::Normal);
+
+        m_importPathFormat.setForeground(QColor("#FFFFFF"));  // White - import paths
+        m_importPathFormat.setFontWeight(QFont::Normal);
+
+        m_thisFormat.setForeground(QColor("#569CD6"));        // Unique blue - this keyword
+        m_thisFormat.setFontWeight(QFont::Normal);
         break;
 
     case SyntaxTheme::VSCodeDark:
@@ -149,6 +184,21 @@ void XXMLSyntaxHighlighter::applyTheme()
 
         m_templateInstFormat.setForeground(QColor("#D7BA7D")); // Tan - templates
         m_templateInstFormat.setFontWeight(QFont::Normal);
+
+        m_methodCallFormat.setForeground(QColor("#DCDCAA"));  // Yellow - method calls
+        m_methodCallFormat.setFontWeight(QFont::Normal);
+
+        m_identifierFormat.setForeground(QColor("#E0E0E0"));  // Light gray - identifiers
+        m_identifierFormat.setFontWeight(QFont::Normal);
+
+        m_variableFormat.setForeground(QColor("#9CDCFE"));    // Light blue - variables
+        m_variableFormat.setFontWeight(QFont::Normal);
+
+        m_importPathFormat.setForeground(QColor("#FFFFFF"));  // White - import paths
+        m_importPathFormat.setFontWeight(QFont::Normal);
+
+        m_thisFormat.setForeground(QColor("#569CD6"));        // Unique blue - this keyword
+        m_thisFormat.setFontWeight(QFont::Normal);
         break;
     }
 }
@@ -157,7 +207,16 @@ void XXMLSyntaxHighlighter::setupRules()
 {
     HighlightingRule rule;
 
+    // Variables: lowercase identifiers (general local variables)
+    // This is applied FIRST so that more specific rules (keywords, method calls) override it
+    rule.pattern = QRegularExpression("\\b[a-z][a-zA-Z0-9_]*\\b");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
     // XXML Keywords (from TokenType.h)
+    // Note: Constructor and Destructor are NOT included here - they are context-dependent
+    // They are keywords only in declaration contexts like [ Constructor default ]
+    // In expressions like String::Constructor, Constructor is a method name
     QStringList keywordPatterns;
     keywordPatterns
         // Namespace and class declarations
@@ -167,8 +226,8 @@ void XXMLSyntaxHighlighter::setupRules()
         << "\\bPublic\\b" << "\\bPrivate\\b" << "\\bProtected\\b" << "\\bStatic\\b"
         // Properties and types
         << "\\bProperty\\b" << "\\bTypes\\b" << "\\bNativeType\\b" << "\\bNativeStructure\\b"
-        // Constructors and methods
-        << "\\bConstructor\\b" << "\\bDestructor\\b" << "\\bdefault\\b"
+        // Method declarations (not Constructor/Destructor - they're context-dependent)
+        << "\\bdefault\\b"
         << "\\bMethod\\b" << "\\bReturns\\b" << "\\bParameters\\b" << "\\bParameter\\b"
         // Entry point and execution
         << "\\bEntrypoint\\b" << "\\bInstantiate\\b" << "\\bLet\\b" << "\\bAs\\b" << "\\bRun\\b"
@@ -179,8 +238,8 @@ void XXMLSyntaxHighlighter::setupRules()
         << "\\bConstrains\\b" << "\\bConstraint\\b" << "\\bRequire\\b"
         << "\\bTruth\\b" << "\\bTypeOf\\b" << "\\bOn\\b"
         << "\\bTemplates\\b" << "\\bCompiletime\\b"
-        // Do, this, Set
-        << "\\bDo\\b" << "\\bthis\\b" << "\\bSet\\b"
+        // Do, Set (this is handled separately with unique color)
+        << "\\bDo\\b" << "\\bSet\\b"
         // Lambda
         << "\\bLambda\\b"
         // Annotations
@@ -197,19 +256,25 @@ void XXMLSyntaxHighlighter::setupRules()
         m_rules.append(rule);
     }
 
+    // Constructor and Destructor as keywords ONLY in declaration context
+    // Match after [ with optional whitespace (simple lookbehind)
+    rule.pattern = QRegularExpression("(?<=\\[\\s)(Constructor|Destructor)\\b");
+    rule.formatType = FormatType::Keyword;
+    m_rules.append(rule);
+
+    // Also match after access modifiers in declaration context
+    rule.pattern = QRegularExpression("(?<=(Public|Private|Protected)\\s)(Constructor|Destructor)\\b");
+    rule.formatType = FormatType::Keyword;
+    m_rules.append(rule);
+
     // Boolean literals
     rule.pattern = QRegularExpression("\\b(true|false)\\b");
     rule.formatType = FormatType::Keyword;
     m_rules.append(rule);
 
-    // Import directive: #import
-    rule.pattern = QRegularExpression("#import\\b");
-    rule.formatType = FormatType::Import;
-    m_rules.append(rule);
-
-    // Angle bracket identifiers with qualified names: <name> or <Namespace::Class::Member>
-    rule.pattern = QRegularExpression("<[a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)*>");
-    rule.formatType = FormatType::AngleBracketId;
+    // 'this' keyword - unique blue color
+    rule.pattern = QRegularExpression("\\bthis\\b");
+    rule.formatType = FormatType::This;
     m_rules.append(rule);
 
     // Function type pattern: F(ReturnType)(ParamTypes)
@@ -227,9 +292,108 @@ void XXMLSyntaxHighlighter::setupRules()
     rule.formatType = FormatType::Type;
     m_rules.append(rule);
 
-    // Qualified names (Namespace::Class::Member) - types start with capital
-    rule.pattern = QRegularExpression("\\b[A-Z][a-zA-Z0-9_]*(?:::[A-Z][a-zA-Z0-9_]*)+");
+    // Standalone type names (capitalized identifiers) - only when followed by ownership or in type contexts
+    // This helps distinguish types from general identifiers
+    rule.pattern = QRegularExpression("\\b[A-Z][a-zA-Z0-9_]*(?=[\\^&%])");
     rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Type after Types keyword
+    rule.pattern = QRegularExpression("(?<=Types\\s{1,20})[A-Z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Type after Returns keyword
+    rule.pattern = QRegularExpression("(?<=Returns\\s{1,20})[A-Z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Type after Extends keyword (but not None which is a keyword)
+    rule.pattern = QRegularExpression("(?<=Extends\\s{1,20})[A-Z][a-zA-Z0-9_]*(?!one)");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Qualified namespace/type access: Namespace::Type or Type::StaticMember
+    // The left part (before ::) should be highlighted as Type
+    rule.pattern = QRegularExpression("\\b[A-Z][a-zA-Z0-9_]*(?=::)");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Static method/member after :: (including Constructor/Destructor as method names)
+    // This captures the method name part after ::
+    rule.pattern = QRegularExpression("(?<=::)[A-Z][a-zA-Z0-9_]*|(?<=::)[a-z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::MethodCall;
+    m_rules.append(rule);
+
+    // Instance method calls: identifier followed by ( - but only lowercase starting identifiers
+    rule.pattern = QRegularExpression("\\b[a-z][a-zA-Z0-9_]*(?=\\s*\\()");
+    rule.formatType = FormatType::MethodCall;
+    m_rules.append(rule);
+
+    // After Run keyword: if lowercase, it's a variable; if uppercase, it's a type
+    // Run varName.method() - varName is a variable
+    rule.pattern = QRegularExpression("(?<=Run\\s)[a-z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
+    // Run TypeName::method() - TypeName is a type
+    rule.pattern = QRegularExpression("(?<=Run\\s)[A-Z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Method calls after Do keyword: Do methodName
+    rule.pattern = QRegularExpression("(?<=Do\\s)[a-zA-Z_][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::MethodCall;
+    m_rules.append(rule);
+
+    // Member access after . (dot operator) - general case for properties
+    rule.pattern = QRegularExpression("(?<=\\.)[a-zA-Z_][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Identifier;
+    m_rules.append(rule);
+
+    // Method calls after . (dot operator) - overrides above when followed by (
+    rule.pattern = QRegularExpression("(?<=\\.)[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()");
+    rule.formatType = FormatType::MethodCall;
+    m_rules.append(rule);
+
+    // Member access after this. - should be variable colored (overrides Identifier)
+    rule.pattern = QRegularExpression("(?<=this\\.)[a-zA-Z_][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
+    // Method calls after this. - still gold (overrides Variable when followed by ()
+    rule.pattern = QRegularExpression("(?<=this\\.)[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()");
+    rule.formatType = FormatType::MethodCall;
+    m_rules.append(rule);
+
+    // Variable after For keyword: For varName In ...
+    rule.pattern = QRegularExpression("(?<=For\\s)[a-z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
+    // Variable after Let keyword: Let varName = ...
+    rule.pattern = QRegularExpression("(?<=Let\\s)[a-z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
+    // Variable after Set keyword: Set varName = ...
+    rule.pattern = QRegularExpression("(?<=Set\\s)[a-z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
+    // Type after As keyword: ... As TypeName
+    rule.pattern = QRegularExpression("(?<=As\\s)[A-Z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Type after Instantiate keyword: Instantiate TypeName^ ...
+    rule.pattern = QRegularExpression("(?<=Instantiate\\s)[A-Z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Variable after If/While/Else keywords (condition variables)
+    rule.pattern = QRegularExpression("(?<=(If|While)\\s)[a-z][a-zA-Z0-9_]*");
+    rule.formatType = FormatType::Variable;
     m_rules.append(rule);
 
     // Ownership markers: ^ (owned), & (reference), % (copy) after type names
@@ -282,9 +446,40 @@ void XXMLSyntaxHighlighter::setupRules()
     rule.formatType = FormatType::String;
     m_rules.append(rule);
 
+    // Import path (what comes after #import) - applied late to override Type/MethodCall rules
+    // Matches the path portion after #import (e.g., "Namespace::Type")
+    rule.pattern = QRegularExpression("(?<=#import\\s)[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*");
+    rule.formatType = FormatType::ImportPath;
+    m_rules.append(rule);
+
+    // Import directive: #import
+    rule.pattern = QRegularExpression("#import\\b");
+    rule.formatType = FormatType::Import;
+    m_rules.append(rule);
+
     // Single-line comments
     rule.pattern = QRegularExpression("//[^\n]*");
     rule.formatType = FormatType::Comment;
+    m_rules.append(rule);
+
+    // Angle brackets < > should ALWAYS be white - applied last to override other rules
+    rule.pattern = QRegularExpression("[<>]");
+    rule.formatType = FormatType::Operator;
+    m_rules.append(rule);
+
+    // Variable names inside angle brackets: <varName> - applied after < > rule
+    rule.pattern = QRegularExpression("(?<=<)[a-z][a-zA-Z0-9_]*(?=>)");
+    rule.formatType = FormatType::Variable;
+    m_rules.append(rule);
+
+    // Type names inside angle brackets: <TypeName>
+    rule.pattern = QRegularExpression("(?<=<)[A-Z][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)*(?=>)");
+    rule.formatType = FormatType::Type;
+    m_rules.append(rule);
+
+    // Method names after Method keyword: Method <methodName>
+    rule.pattern = QRegularExpression("(?<=Method\\s<)[a-zA-Z_][a-zA-Z0-9_]*(?=>)");
+    rule.formatType = FormatType::MethodCall;
     m_rules.append(rule);
 
     // Multi-line comment markers

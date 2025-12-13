@@ -1,8 +1,18 @@
 #include "ProblemsPanel.h"
 
 #include <QHeaderView>
+#include <QRegularExpression>
 
 namespace XXMLStudio {
+
+// Strip ANSI escape codes from text
+static QString stripAnsi(const QString& text)
+{
+    static QRegularExpression ansiRegex(R"(\x1b\[[0-9;]*m)");
+    QString result = text;
+    result.remove(ansiRegex);
+    return result;
+}
 
 ProblemsPanel::ProblemsPanel(QWidget* parent)
     : QWidget(parent)
@@ -31,6 +41,7 @@ void ProblemsPanel::setupUi()
     m_tableView->setAlternatingRowColors(true);
     m_tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_tableView->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_tableView->setEditTriggers(QAbstractItemView::NoEditTriggers);  // Read-only
     m_tableView->verticalHeader()->hide();
     m_tableView->horizontalHeader()->setStretchLastSection(true);
     m_layout->addWidget(m_tableView);
@@ -59,28 +70,79 @@ void ProblemsPanel::clear()
     updateSummary();
 }
 
+void ProblemsPanel::clearProblemsForFile(const QString& file)
+{
+    // Remove problems for this file from the list
+    QList<Problem> remaining;
+    m_errorCount = 0;
+    m_warningCount = 0;
+
+    for (const Problem& problem : m_problems) {
+        if (problem.file != file) {
+            remaining.append(problem);
+            if (problem.severity == Problem::Error) {
+                ++m_errorCount;
+            } else if (problem.severity == Problem::Warning) {
+                ++m_warningCount;
+            }
+        }
+    }
+
+    // Rebuild the model
+    m_model->removeRows(0, m_model->rowCount());
+    m_problems.clear();
+
+    for (const Problem& problem : remaining) {
+        // Add back without incrementing counts (already done above)
+        m_problems.append(problem);
+
+        QList<QStandardItem*> row;
+        QStandardItem* severityItem = new QStandardItem(severityIcon(problem.severity));
+        severityItem->setTextAlignment(Qt::AlignCenter);
+        row.append(severityItem);
+
+        QStandardItem* fileItem = new QStandardItem(problem.file);
+        row.append(fileItem);
+
+        QStandardItem* lineItem = new QStandardItem(QString::number(problem.line));
+        lineItem->setTextAlignment(Qt::AlignCenter);
+        row.append(lineItem);
+
+        QStandardItem* messageItem = new QStandardItem(problem.message);
+        row.append(messageItem);
+
+        m_model->appendRow(row);
+    }
+
+    updateSummary();
+}
+
 void ProblemsPanel::addProblem(const Problem& problem)
 {
-    m_problems.append(problem);
+    // Store problem with stripped ANSI codes
+    Problem cleanProblem = problem;
+    cleanProblem.file = stripAnsi(problem.file);
+    cleanProblem.message = stripAnsi(problem.message);
+    m_problems.append(cleanProblem);
 
     QList<QStandardItem*> row;
 
     // Severity icon
-    QStandardItem* severityItem = new QStandardItem(severityIcon(problem.severity));
+    QStandardItem* severityItem = new QStandardItem(severityIcon(cleanProblem.severity));
     severityItem->setTextAlignment(Qt::AlignCenter);
     row.append(severityItem);
 
     // File
-    QStandardItem* fileItem = new QStandardItem(problem.file);
+    QStandardItem* fileItem = new QStandardItem(cleanProblem.file);
     row.append(fileItem);
 
     // Line
-    QStandardItem* lineItem = new QStandardItem(QString::number(problem.line));
+    QStandardItem* lineItem = new QStandardItem(QString::number(cleanProblem.line));
     lineItem->setTextAlignment(Qt::AlignCenter);
     row.append(lineItem);
 
     // Message
-    QStandardItem* messageItem = new QStandardItem(problem.message);
+    QStandardItem* messageItem = new QStandardItem(cleanProblem.message);
     row.append(messageItem);
 
     m_model->appendRow(row);
@@ -99,10 +161,10 @@ void ProblemsPanel::addProblem(const QString& file, int line, int column,
                                const QString& severity, const QString& message)
 {
     Problem problem;
-    problem.file = file;
+    problem.file = stripAnsi(file);
     problem.line = line;
     problem.column = column;
-    problem.message = message;
+    problem.message = stripAnsi(message);
 
     QString sev = severity.toLower();
     if (sev == "error" || sev == "fatal") {

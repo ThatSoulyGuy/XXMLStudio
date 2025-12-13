@@ -3,6 +3,7 @@
 #include "core/Application.h"
 #include "core/Settings.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -236,7 +237,24 @@ CodeEditor* EditorTabWidget::editorAt(int index) const
 
 CodeEditor* EditorTabWidget::editorForFile(const QString& path) const
 {
-    return m_fileEditors.value(path, nullptr);
+    // Try exact match first
+    if (m_fileEditors.contains(path)) {
+        return m_fileEditors.value(path);
+    }
+
+    // On Windows, paths might differ by separator or case
+    // Normalize the search path
+    QString normalizedSearch = QDir::cleanPath(path);
+
+    for (auto it = m_fileEditors.constBegin(); it != m_fileEditors.constEnd(); ++it) {
+        QString normalizedStored = QDir::cleanPath(it.key());
+        // Case-insensitive compare on Windows
+        if (normalizedSearch.compare(normalizedStored, Qt::CaseInsensitive) == 0) {
+            return it.value();
+        }
+    }
+
+    return nullptr;
 }
 
 int EditorTabWidget::indexOfFile(const QString& path) const

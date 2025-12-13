@@ -1,5 +1,6 @@
 #include "DependencyManager.h"
 #include "GitFetcher.h"
+#include "LibraryProcessor.h"
 #include "Project.h"
 
 #include <QDir>
@@ -21,6 +22,12 @@ DependencyManager::DependencyManager(QObject* parent)
     connect(m_fetcher, &GitFetcher::progress,
             this, &DependencyManager::onFetchProgress);
 
+    m_processor = new LibraryProcessor(this);
+    connect(m_processor, &LibraryProcessor::progress,
+            this, &DependencyManager::resolutionProgress);
+    connect(m_processor, &LibraryProcessor::error,
+            this, &DependencyManager::error);
+
     // Default cache directory
     QString appData = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     m_cacheDir = appData + "/XXMLStudio/dependencies";
@@ -38,6 +45,33 @@ void DependencyManager::setCacheDir(const QString& path)
     QDir().mkpath(m_cacheDir);
 }
 
+void DependencyManager::setProjectRoot(const QString& path)
+{
+    m_projectRoot = path;
+}
+
+QString DependencyManager::getLibraryPath(const QString& depName) const
+{
+    if (m_projectRoot.isEmpty()) {
+        return QString();
+    }
+    return m_projectRoot + "/Library/" + depName;
+}
+
+void DependencyManager::copyDllsToOutput(const QString& outputDir)
+{
+    if (m_projectRoot.isEmpty()) {
+        return;
+    }
+
+    QString libraryRoot = m_projectRoot + "/Library";
+    int count = m_processor->copyDllsToOutput(libraryRoot, outputDir);
+
+    if (count > 0) {
+        emit resolutionProgress(QString("Copied %1 DLL(s) to output directory").arg(count));
+    }
+}
+
 void DependencyManager::resolveDependencies(Project* project)
 {
     if (m_resolving) {
@@ -48,8 +82,12 @@ void DependencyManager::resolveDependencies(Project* project)
     m_resolving = true;
     m_currentProject = project;
     m_resolvedPaths.clear();
+    m_dependencyDlls.clear();
     m_processedUrls.clear();
     m_pendingQueue.clear();
+
+    // Set project root for Library folder
+    setProjectRoot(project->projectDir());
 
     emit resolutionStarted();
 
@@ -81,7 +119,7 @@ bool DependencyManager::isCached(const QString& gitUrl, const QString& tag) cons
 QString DependencyManager::getCachedPath(const QString& gitUrl, const QString& tag) const
 {
     QString urlPath = urlToPath(gitUrl);
-    QString version = tag.isEmpty() ? "main" : tag;
+    QString version = tag.isEmpty() ? "default" : tag;
     return m_cacheDir + "/" + urlPath + "/" + version;
 }
 
@@ -90,6 +128,14 @@ void DependencyManager::clearCache()
     QDir cacheDir(m_cacheDir);
     cacheDir.removeRecursively();
     QDir().mkpath(m_cacheDir);
+}
+
+void DependencyManager::clearCacheFor(const QString& gitUrl, const QString& tag)
+{
+    QString path = getCachedPath(gitUrl, tag);
+    if (QDir(path).exists()) {
+        QDir(path).removeRecursively();
+    }
 }
 
 void DependencyManager::cancel()
@@ -135,15 +181,22 @@ void DependencyManager::fetchDependency(const PendingDependency& dep)
 
     if (isCached(dep.gitUrl, dep.tag)) {
         emit resolutionProgress(QString("Using cached: %1").arg(dep.name));
-        m_resolvedPaths[dep.name] = cachedPath;
-        emit dependencyResolved(dep.name, cachedPath);
 
-        // Check for transitive dependencies
+        // Parse transitive dependencies BEFORE processing (removes .xxmlp)
         parseTransitiveDependencies(cachedPath);
+
+        // Process to Library folder
+        if (!processToLibraryFolder(dep.name, cachedPath)) {
+            m_resolving = false;
+            emit resolutionFinished(false);
+            return;
+        }
 
         processNextDependency();
     } else {
-        emit resolutionProgress(QString("Fetching: %1").arg(dep.name));
+        // Track current dependency for error reporting
+        m_currentDependency = dep;
+        emit resolutionProgress(QString("Fetching: %1 from %2").arg(dep.name, dep.gitUrl));
         m_fetcher->clone(dep.gitUrl, cachedPath, dep.tag);
     }
 }
@@ -210,42 +263,55 @@ void DependencyManager::onFetchFinished(bool success, const QString& path)
     }
 
     if (success) {
-        // Find which dependency was just fetched
-        QString depName;
-        for (auto it = m_processedUrls.constBegin(); it != m_processedUrls.constEnd(); ++it) {
-            QString cachedPath = getCachedPath(*it, QString());
-            if (cachedPath == path || path.startsWith(m_cacheDir)) {
-                // Find name from original dependencies
-                if (m_currentProject) {
-                    for (const Dependency& dep : m_currentProject->dependencies()) {
-                        QString checkPath = getCachedPath(dep.gitUrl, dep.tag);
-                        if (checkPath == path) {
-                            depName = dep.name;
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-        }
+        // Use the tracked current dependency name
+        QString depName = m_currentDependency.name;
 
         if (depName.isEmpty()) {
-            // Extract from path
+            // Fallback: extract from path
             depName = QFileInfo(path).fileName();
         }
 
-        m_resolvedPaths[depName] = path;
-        emit dependencyResolved(depName, path);
-
-        // Check for transitive dependencies
+        // Parse transitive dependencies BEFORE processing (removes .xxmlp)
         parseTransitiveDependencies(path);
+
+        // Process to Library folder
+        if (!processToLibraryFolder(depName, path)) {
+            m_resolving = false;
+            emit resolutionFinished(false);
+            return;
+        }
 
         processNextDependency();
     } else {
         m_resolving = false;
-        emit error(QString("Failed to fetch dependency"));
+        QString errorMsg = QString("Failed to fetch dependency '%1' from %2")
+            .arg(m_currentDependency.name, m_currentDependency.gitUrl);
+        emit error(errorMsg);
         emit resolutionFinished(false);
     }
+}
+
+bool DependencyManager::processToLibraryFolder(const QString& depName, const QString& cachePath)
+{
+    QString libraryPath = getLibraryPath(depName);
+
+    if (libraryPath.isEmpty()) {
+        emit error("Project root not set, cannot process to Library folder");
+        return false;
+    }
+
+    QStringList dllFiles;
+    if (!m_processor->processToLibrary(cachePath, libraryPath, dllFiles)) {
+        emit error(QString("Failed to process dependency '%1' to Library folder").arg(depName));
+        return false;
+    }
+
+    // Store resolved path and DLLs
+    m_resolvedPaths[depName] = libraryPath;
+    m_dependencyDlls[depName] = dllFiles;
+
+    emit dependencyResolved(depName, libraryPath);
+    return true;
 }
 
 void DependencyManager::onFetchError(const QString& message)

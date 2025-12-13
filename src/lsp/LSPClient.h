@@ -32,12 +32,18 @@ public:
     // Connection management
     bool start(const QString& serverPath);
     void stop();
+    void restart();  // Restart with current include paths
     State state() const { return m_state; }
     bool isReady() const { return m_state == State::Ready; }
 
     // Project root for LSP
     void setProjectRoot(const QString& path);
     QString projectRoot() const { return m_rootPath; }
+
+    // Include paths for #import resolution
+    void setIncludePaths(const QStringList& paths);
+    QStringList includePaths() const { return m_includePaths; }
+    void updateConfiguration();  // Send config update to running server
 
     // Document management
     void openDocument(const QString& uri, const QString& languageId, int version, const QString& text);
@@ -88,7 +94,10 @@ private:
 
     JsonRpcClient* m_rpc = nullptr;
     State m_state = State::Disconnected;
+    QString m_serverPath;
     QString m_rootPath;
+    QStringList m_includePaths;
+    bool m_pendingRestart = false;
 
     // Track pending request URIs for routing responses
     QMap<int, QString> m_pendingCompletions;

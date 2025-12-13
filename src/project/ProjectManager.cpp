@@ -37,7 +37,7 @@ bool ProjectManager::openProject(const QString& path)
     return true;
 }
 
-bool ProjectManager::createProject(const QString& path, const QString& name)
+bool ProjectManager::createProject(const QString& path, const QString& name, Project::Type type)
 {
     // Close any existing project
     closeProject();
@@ -45,8 +45,13 @@ bool ProjectManager::createProject(const QString& path, const QString& name)
     // Create new project
     m_currentProject = new Project(this);
     m_currentProject->setName(name);
-    m_currentProject->setEntryPoint("src/Main.XXML");
+    m_currentProject->setType(type);
     m_currentProject->addIncludePath("src");
+
+    // Set entry point only for executable projects
+    if (type == Project::Type::Executable) {
+        m_currentProject->setEntryPoint("src/Main.XXML");
+    }
 
     connect(m_currentProject, &Project::modified,
             this, &ProjectManager::projectModified);

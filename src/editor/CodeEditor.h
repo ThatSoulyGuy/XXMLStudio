@@ -6,12 +6,15 @@
 #include <QList>
 #include <QSet>
 #include <QTextEdit>
+#include <QTimer>
 
 #include "XXMLSyntaxHighlighter.h"
+#include "../lsp/LSPProtocol.h"
 
 namespace XXMLStudio {
 
 class LineNumberArea;
+class CompletionWidget;
 
 /**
  * Diagnostic information for displaying error/warning underlines.
@@ -89,10 +92,24 @@ public:
     int currentLine() const;
     int currentColumn() const;
 
+    // Autocomplete
+    void showCompletions(const QList<LSPCompletionItem>& items);
+    void hideCompletions();
+    bool isCompletionVisible() const;
+
+    // Request completion manually (Ctrl+Space)
+    void triggerCompletion();
+
 signals:
     void modificationChanged(bool modified);
     void cursorPositionChanged(int line, int column);
     void diagnosticHovered(const QString& message);
+
+    // Completion request signal - emitted when completion should be requested from LSP
+    void completionRequested(int line, int character);
+
+    // Document changed signal for LSP sync
+    void documentChanged();
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -134,6 +151,15 @@ private:
 
     // Find state
     QString m_lastSearchText;
+
+    // Autocomplete
+    CompletionWidget* m_completionWidget = nullptr;
+    QTimer* m_completionTimer = nullptr;
+    static constexpr int COMPLETION_DELAY_MS = 100;
+
+    // Trigger characters for autocomplete
+    bool isTriggerCharacter(QChar ch) const;
+    void scheduleCompletion();
 };
 
 /**
