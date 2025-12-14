@@ -142,7 +142,13 @@ QString Application::appDir() const
 
 QString Application::toolchainDir() const
 {
+#ifdef Q_OS_MACOS
+    // macOS app bundle: XXMLStudio.app/Contents/Resources/toolchain
+    return appDir() + "/../Resources/toolchain";
+#else
+    // Windows/Linux: toolchain directory alongside executable
     return appDir() + "/toolchain";
+#endif
 }
 
 QString Application::compilerPath() const
@@ -150,6 +156,7 @@ QString Application::compilerPath() const
 #ifdef Q_OS_WIN
     return toolchainDir() + "/bin/xxml.exe";
 #else
+    // macOS/Linux: bundled toolchain has bin/ subdirectory
     return toolchainDir() + "/bin/xxml";
 #endif
 }
@@ -159,6 +166,7 @@ QString Application::lspServerPath() const
 #ifdef Q_OS_WIN
     return toolchainDir() + "/bin/xxml-lsp.exe";
 #else
+    // macOS/Linux: bundled toolchain has bin/ subdirectory
     return toolchainDir() + "/bin/xxml-lsp";
 #endif
 }

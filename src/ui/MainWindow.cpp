@@ -15,6 +15,7 @@
 #include "build/BuildManager.h"
 #include "build/ProcessRunner.h"
 #include "build/OutputParser.h"
+#include "build/ToolchainLocator.h"
 #include "lsp/LSPClient.h"
 #include "lsp/LSPProtocol.h"
 #include "dialogs/NewProjectDialog.h"
@@ -113,15 +114,17 @@ void MainWindow::setupUi()
     setupStatusBar();
     setupConnections();
 
-    // Start LSP client with system-installed XXML LSP server
-    QString lspPath = QDir::toNativeSeparators("C:/Program Files/XXML/bin/xxml-lsp.exe");
-    logToFile(QString("LSP: Looking for server at: %1").arg(lspPath));
-    if (QFileInfo::exists(lspPath)) {
-        logToFile("LSP: Server found, starting...");
+    // Start LSP client - find the LSP server using ToolchainLocator
+    ToolchainLocator toolchainLocator;
+    QString lspPath = toolchainLocator.lspServerPath();
+    logToFile(QString("LSP: ToolchainLocator found: %1").arg(lspPath.isEmpty() ? "nothing" : lspPath));
+
+    if (!lspPath.isEmpty() && QFileInfo::exists(lspPath)) {
+        logToFile(QString("LSP: Starting server at: %1").arg(lspPath));
         m_lspClient->start(lspPath);
     } else {
-        logToFile("LSP: Server NOT found!");
-        statusBar()->showMessage(tr("LSP server not found: %1").arg(lspPath), 5000);
+        logToFile("LSP: Server NOT found in any search path!");
+        statusBar()->showMessage(tr("LSP server not found. Install XXML toolchain or check PATH."), 5000);
     }
 }
 
@@ -974,13 +977,18 @@ void MainWindow::setupConnections()
         if (path.startsWith("file:///")) {
             path = path.mid(8);
         }
+#ifdef Q_OS_WIN
+        // Windows: convert forward slashes to backslashes
         path.replace("/", "\\");
+#endif
         logToFile(QString("MainWindow: Converted path: %1").arg(path));
 
-        // Find editor for this file - try both cases on Windows
+        // Find editor for this file
         CodeEditor* editor = m_editorTabs->editorForFile(path);
         logToFile(QString("MainWindow: editorForFile(%1) returned %2").arg(path).arg(editor ? "editor" : "null"));
 
+#ifdef Q_OS_WIN
+        // Windows: try both cases for drive letter
         if (!editor) {
             // Try with lowercase drive letter
             QString altPath = path;
@@ -999,6 +1007,7 @@ void MainWindow::setupConnections()
                 logToFile(QString("MainWindow: editorForFile(%1) returned %2").arg(altPath).arg(editor ? "editor" : "null"));
             }
         }
+#endif
         if (editor) {
             logToFile(QString("MainWindow: Calling showCompletions with %1 items").arg(items.size()));
             editor->showCompletions(items);
@@ -1015,10 +1024,15 @@ void MainWindow::setupConnections()
         if (path.startsWith("file:///")) {
             path = path.mid(8);
         }
+#ifdef Q_OS_WIN
+        // Windows: convert forward slashes to backslashes
         path.replace("/", "\\");
+#endif
 
-        // Find editor for this file - try both cases on Windows
+        // Find editor for this file
         CodeEditor* editor = m_editorTabs->editorForFile(path);
+#ifdef Q_OS_WIN
+        // Windows: try both cases for drive letter
         if (!editor) {
             QString altPath = path;
             if (altPath.length() > 1 && altPath[1] == ':') {
@@ -1033,6 +1047,7 @@ void MainWindow::setupConnections()
                 editor = m_editorTabs->editorForFile(altPath);
             }
         }
+#endif
         if (editor) {
             // Convert LSP diagnostics to editor diagnostics
             QList<Diagnostic> editorDiagnostics;
