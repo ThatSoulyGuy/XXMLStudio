@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=XXMLStudio
+Comment=Integrated Development Environment for the XXML programming language
+Exec=xxmlstudio %F
+Icon=xxmlstudio
+Terminal=false
+Type=Application
+Categories=Development;IDE;TextEditor;
+MimeType=text/x-xxml;application/x-xxmlp;
+Keywords=xxml;ide;programming;editor;development;
+StartupNotify=true
+StartupWMClass=XXMLStudio

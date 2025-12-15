@@ -220,4 +220,110 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/toolchain")
     )
 endif()
 
+# =============================================================================
+# CPack Configuration for Packaging
+# =============================================================================
+
+set(CPACK_PACKAGE_NAME "XXMLStudio")
+set(CPACK_PACKAGE_VENDOR "XXML")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "XXML IDE - Integrated Development Environment for the XXML programming language")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH 0)
+set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "XXMLStudio")
+if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+endif()
+
+# macOS specific
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+    set(CPACK_DMG_VOLUME_NAME "XXMLStudio ${CPACK_PACKAGE_VERSION}")
+    set(CPACK_DMG_FORMAT "UDZO")
+    set(CPACK_BUNDLE_NAME "XXMLStudio")
+    set(CPACK_BUNDLE_PLIST "${CMAKE_SOURCE_DIR}/installer/macos/Info.plist")
+    set(CPACK_BUNDLE_ICON "${CMAKE_SOURCE_DIR}/resources/icons/app-icon.icns")
+
+    # Set bundle identifier
+    set(MACOSX_BUNDLE_GUI_IDENTIFIER "dev.xxml.XXMLStudio")
+    set(MACOSX_BUNDLE_BUNDLE_NAME "XXMLStudio")
+    set(MACOSX_BUNDLE_ICON_FILE "app-icon.icns")
+    set(MACOSX_BUNDLE_INFO_STRING "XXMLStudio ${CPACK_PACKAGE_VERSION}")
+    set(MACOSX_BUNDLE_COPYRIGHT "Copyright (c) 2024 XXML")
+
+    if(EXISTS "${CMAKE_SOURCE_DIR}/installer/macos/Info.plist.in")
+        set_target_properties(XXMLStudio PROPERTIES
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/installer/macos/Info.plist.in"
+        )
+    endif()
+endif()
+
+# Windows specific
+if(WIN32)
+    set(CPACK_GENERATOR "NSIS;ZIP")
+    set(CPACK_NSIS_DISPLAY_NAME "XXMLStudio")
+    set(CPACK_NSIS_PACKAGE_NAME "XXMLStudio")
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\XXMLStudio.exe")
+    set(CPACK_NSIS_HELP_LINK "https://xxml.dev")
+    set(CPACK_NSIS_URL_INFO_ABOUT "https://xxml.dev")
+    set(CPACK_NSIS_CONTACT "support@xxml.dev")
+    set(CPACK_NSIS_MODIFY_PATH ON)
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+
+    # Create desktop shortcut
+    set(CPACK_NSIS_CREATE_ICONS_EXTRA
+        "CreateShortCut '$DESKTOP\\\\XXMLStudio.lnk' '$INSTDIR\\\\bin\\\\XXMLStudio.exe'"
+    )
+    set(CPACK_NSIS_DELETE_ICONS_EXTRA
+        "Delete '$DESKTOP\\\\XXMLStudio.lnk'"
+    )
+
+    # File associations
+    set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+        WriteRegStr HKCR '.xxml' '' 'XXMLStudio.xxmlfile'
+        WriteRegStr HKCR 'XXMLStudio.xxmlfile' '' 'XXML Source File'
+        WriteRegStr HKCR 'XXMLStudio.xxmlfile\\\\shell\\\\open\\\\command' '' '$INSTDIR\\\\bin\\\\XXMLStudio.exe \\\"%1\\\"'
+        WriteRegStr HKCR '.xxmlp' '' 'XXMLStudio.xxmlpfile'
+        WriteRegStr HKCR 'XXMLStudio.xxmlpfile' '' 'XXML Project File'
+        WriteRegStr HKCR 'XXMLStudio.xxmlpfile\\\\shell\\\\open\\\\command' '' '$INSTDIR\\\\bin\\\\XXMLStudio.exe \\\"%1\\\"'
+    ")
+    set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
+        DeleteRegKey HKCR '.xxml'
+        DeleteRegKey HKCR 'XXMLStudio.xxmlfile'
+        DeleteRegKey HKCR '.xxmlp'
+        DeleteRegKey HKCR 'XXMLStudio.xxmlpfile'
+    ")
+endif()
+
+# Linux specific
+if(UNIX AND NOT APPLE)
+    set(CPACK_GENERATOR "DEB;RPM;TGZ")
+
+    # DEB settings
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "XXML <support@xxml.dev>")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6widgets6, libqt6network6, libqt6svg6")
+
+    # RPM settings
+    set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+    set(CPACK_RPM_PACKAGE_GROUP "Development/Tools")
+    set(CPACK_RPM_PACKAGE_REQUIRES "qt6-qtbase, qt6-qtsvg")
+
+    # Install desktop file
+    if(EXISTS "${CMAKE_SOURCE_DIR}/installer/linux/xxmlstudio.desktop")
+        install(FILES "${CMAKE_SOURCE_DIR}/installer/linux/xxmlstudio.desktop"
+            DESTINATION share/applications
+        )
+    endif()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/icons/app-icon.png")
+        install(FILES "${CMAKE_SOURCE_DIR}/resources/icons/app-icon.png"
+            DESTINATION share/icons/hicolor/256x256/apps
+            RENAME xxmlstudio.png
+        )
+    endif()
+endif()
+
+include(CPack)
+
 qt_finalize_executable(XXMLStudio)

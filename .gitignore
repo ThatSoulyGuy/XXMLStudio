@@ -3,3 +3,8 @@
 
 build
 nul
+
+# Installer outputs and local config
+installer/*/out/
+installer/**/.env.local
+.env.local
